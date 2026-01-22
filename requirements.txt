@@ -1,0 +1,12 @@
+langchain==1.0.0a7
+langgraph==0.6.7
+groq==0.2.0
+chromadb==1.1.0
+pypdf==6.1.0
+sentence-transformers==5.1.1
+streamlit==1.49.1
+python-dotenv==1.1.1
+pydantic==2.8.2  # Add or ensure this is present
+langchain-huggingface==0.0.3 # Add this new package
+langchain-community
+langchain-google-genai

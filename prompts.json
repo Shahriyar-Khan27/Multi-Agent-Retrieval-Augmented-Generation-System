@@ -1,0 +1,7 @@
+{
+  "summarize_default": "Summarize the key takeaways from the Q3 Financial Report.",
+  "summarize_long": "Provide a long and detailed summary of the main points in the Security Advisory document.",
+  "slack_reply": "Give me a concise Slack-style summary of the product features from the Data Sheet.",
+  "executive_email": "Draft a formal email to leadership summarizing the new project proposal.",
+  "direct_answer": "What is the capital expenditure for the last quarter mentioned in the Q3 report?"
+}
