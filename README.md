@@ -7,21 +7,6 @@
 
 A powerful **agent-based Retrieval-Augmented Generation (RAG) system** that dynamically retrieves, summarizes, and reformats information from documents using intelligent multi-agent orchestration.
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Technology Stack](#technology-stack)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Project Structure](#project-structure)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## 🎯 Overview
 
 This project demonstrates a sophisticated RAG system that leverages multiple AI agents to intelligently process and respond to user queries. The system can retrieve information from a knowledge base of PDF documents, summarize content, and reformat responses for different contexts (e.g., Slack messages, executive emails).
