@@ -8,7 +8,6 @@ import json
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.tools import tool
 from dotenv import load_dotenv
 
 
@@ -22,6 +21,7 @@ llm = ChatGoogleGenerativeAI(
 
 DB_DIR = os.path.join(os.getcwd(), "chroma_db")
 VECTOR_MODEL = "all-MiniLM-L6-v2"
+RELEVANCE_THRESHOLD = 1.2  # ChromaDB L2 distance — lower = more similar
 
 # Instantiate embeddings (DB will be loaded when needed)
 embeddings = HuggingFaceEmbeddings(model_name=VECTOR_MODEL)
@@ -37,13 +37,23 @@ def _get_db():
 
 
 def _retrieve_docs(query: str, k: int = 5) -> tuple:
-    """Retrieve relevant document chunks from ChromaDB. Returns (content, sources)."""
+    """Retrieve docs with relevance scores. Returns (content, sources, is_relevant).
+    Uses similarity_search_with_score to check if results are actually relevant."""
     vector_db = _get_db()
-    retriever = vector_db.as_retriever(search_kwargs={"k": k})
-    docs = retriever.invoke(query)
-    sources = ", ".join(list(set([doc.metadata.get("source", "unknown") for doc in docs])))
-    content = " ".join([doc.page_content for doc in docs])
-    return content, sources
+    results = vector_db.similarity_search_with_score(query, k=k)
+
+    if not results:
+        return "", "", False
+
+    # Filter to only relevant chunks (L2 distance below threshold)
+    relevant = [(doc, score) for doc, score in results if score < RELEVANCE_THRESHOLD]
+
+    if not relevant:
+        return "", "", False
+
+    sources = ", ".join(list(set([doc.metadata.get("source", "unknown") for doc, _ in relevant])))
+    content = " ".join([doc.page_content for doc, _ in relevant])
+    return content, sources, True
 
 
 # --- Intent Classification using LLM ---
@@ -105,37 +115,6 @@ For summarize, set length to "long" if user asks for detailed/long summary, othe
         return {"intent": "rag"}
 
 
-# --- Define the Agent's Tools ---
-
-@tool
-def retrieve_information(query: str) -> dict:
-    """
-    Retrieves relevant information from the document knowledge base for a given query.
-    Returns the content and the source document names.
-    """
-    content, sources = _retrieve_docs(query, k=5)
-
-    prompt = """You are an expert assistant. Use the provided context to answer the question accurately.
-
-Context Information:
-{context}
-
-Question: {user_query}
-
-Instructions:
-- Answer using ONLY the information from the context
-- Provide a direct, professional answer
-- Do not mention "based on context" or "according to document"
-- If the context contains multiple definitions or explanations, use the most relevant one
-- Be accurate to the source material
-
-Answer:""".format(context=content, user_query=query)
-
-    llm_response = llm.invoke(prompt)
-
-    return {"content": llm_response.content, "source": sources, "type": "rag"}
-
-
 def summarize_content(content: str, length: str = "default") -> dict:
     """
     Summarizes a block of text to a specified length.
@@ -169,16 +148,36 @@ def format_response(text: str, format_type: str) -> dict:
 
 # --- Intent Handlers ---
 
-def handle_rag(query: str) -> tuple:
-    """Retrieve from documents and answer the query."""
-    retrieval = retrieve_information.invoke(query)
-    return retrieval["content"], "rag", retrieval["source"]
+def handle_rag(query: str, chat_history: list = None) -> tuple:
+    """Retrieve from documents and answer. Falls back to LLM if docs aren't relevant."""
+    content, sources, is_relevant = _retrieve_docs(query, k=5)
+
+    if not is_relevant:
+        return handle_conversation(query, chat_history)
+
+    prompt = """You are an expert assistant. Use the provided context to answer the question accurately.
+
+Context Information:
+{context}
+
+Question: {user_query}
+
+Instructions:
+- Primarily use the information from the context to answer
+- If the context only partially covers the question, supplement with your general knowledge
+- Provide a direct, professional answer
+- Do not mention "based on context" or "according to document"
+- If the context contains multiple definitions or explanations, use the most relevant one
+
+Answer:""".format(context=content, user_query=query)
+
+    response = llm.invoke(prompt)
+    return response.content, "rag", sources
 
 
 def handle_summarize(query: str, length: str = "default") -> tuple:
     """Retrieve document content first, then summarize it."""
-    # Retrieve relevant document content from ChromaDB
-    doc_content, sources = _retrieve_docs(query, k=10)
+    doc_content, sources, _ = _retrieve_docs(query, k=10)
 
     if not doc_content.strip():
         return "No documents found to summarize. Please upload PDFs first.", "summarizer", None
@@ -189,8 +188,7 @@ def handle_summarize(query: str, length: str = "default") -> tuple:
 
 def handle_format(query: str, format_type: str) -> tuple:
     """Retrieve document content first, then format it."""
-    # Retrieve relevant content to format
-    doc_content, sources = _retrieve_docs(query, k=5)
+    doc_content, sources, _ = _retrieve_docs(query, k=5)
 
     if not doc_content.strip():
         format_result = format_response(query, format_type)
@@ -237,12 +235,12 @@ def process_query(query: str, chat_history: list = None) -> dict:
     elif intent == "format_email":
         output, response_type, source = handle_format(query, "email")
     elif intent == "rag":
-        output, response_type, source = handle_rag(query)
+        output, response_type, source = handle_rag(query, chat_history)
     elif intent == "conversation":
         output, response_type, source = handle_conversation(query, chat_history)
     else:
         # Default to RAG for unknown intents
-        output, response_type, source = handle_rag(query)
+        output, response_type, source = handle_rag(query, chat_history)
 
     # Append source metadata if available
     if source:
