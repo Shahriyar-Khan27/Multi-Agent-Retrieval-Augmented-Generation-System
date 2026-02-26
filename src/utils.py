@@ -1,4 +1,3 @@
-#updated
 import os
 import hashlib
 import shutil
